@@ -1,6 +1,6 @@
 /*
- * Eseye ETM Basic configuration.
- * Copyright (C) 2019 Eseye Design Limited
+ * Amazon FreeRTOS V1.2.6
+ * Copyright (C) 2017 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -21,16 +21,13 @@
  *
  * http://aws.amazon.com/freertos
  * http://www.FreeRTOS.org
- * 
- * http://www.eseye.com/solutions/anynet-secure/
  */
 
-#ifndef _ETM_BASIC_CONFIG_H_
-#define _ETM_BASIC_CONFIG_H_
+#ifndef _ETM_DEMO_OTA_H_
+#define _ETM_DEMO_OTA_H_
 
-/* ETM basic task example parameters. */
-#define democonfigETM_BASIC_TASK_STACK_SIZE                  ( configMINIMAL_STACK_SIZE * 4 )
-#define democonfigETM_BASIC_TASK_PRIORITY                    ( tskIDLE_PRIORITY )
+#include "aws_demo.h"
 
+demoDECLARE_DEMO( vStartETMOtaDemo );
 
-#endif /* _ETM_BASIC_CONFIG_H_ */
+#endif

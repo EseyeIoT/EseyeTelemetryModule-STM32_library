@@ -18,6 +18,10 @@
 
 static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match);
 
+#ifdef TIMEOUT_RESPONSES
+static bool ETMcheckTimeout(ETMObject_t *Obj);
+#endif
+
 /* Private variable ---------------------------------------------------------*/
 char CmdString[ETM_CMD_SIZE];
 
@@ -26,12 +30,12 @@ char CmdString[ETM_CMD_SIZE];
 
 
 //#define ETM_DBG(x...)
-//#define ETM_DBG_AT(x...)
+#define ETM_DBG_AT(x...)
 //#define ETM_DEEP_DBG(x...)
 
 #define UARTDEBUGPRINTF(x...) configPRINTF((x))
 #define ETM_DBG(x...)         configPRINTF(x)
-#define ETM_DBG_AT(x...)      configPRINTF(x)
+//#define ETM_DBG_AT(x...)      configPRINTF(x)
 #define ETM_DEEP_DBG(x...)    configPRINTF(x)
 
 
@@ -48,6 +52,7 @@ const ETM_RetKeywords_t ReturnKeywords[] = {
     { RET_EURDY,        "+ETM:EURDY\r\n"},
     { RET_STATEURC,     "+ETMSTATE:"},
     { RET_APPRDY,       "APP RDY"},
+    { RET_FWAVAILABLE,  "+ETMHFWGET:"},
     { RET_OK,           "OK\r\n" },
     { RET_ERROR,        "ERROR\r\n" },
     { RET_CRLF,         "\r\n" },
@@ -287,13 +292,14 @@ ETM_InitRet_t ETM_Init(ETMObject_t *Obj, _atcb urccallback){
       Obj->urcseen = 0;
       Obj->currentstate = ETM_UNKNOWN;
       Obj->statecallback = NULL;
+      Obj->fwupdcb = NULL;
     
 //    }
 
       ETM_DBG(("ETM waiting...\r\n"));
       /* Wait for ETM:IDLE */
       tickstart = Obj->GetTickCb();
-      while((Obj->GetTickCb() - tickstart) < pdMS_TO_TICKS(10000) && !(Obj->urcseen & ETM_READY_URC)){
+      while((Obj->GetTickCb() - tickstart) < pdMS_TO_TICKS(15000) && !(Obj->urcseen & ETM_READY_URC)){
           ETMpoll(Obj);
       }
   }else{
@@ -451,9 +457,9 @@ static int hextooctet(char *hex){
 	if(hex[1] >= '0' && hex[1] <= '9')
 		octet |= (hex[1] - '0');
 	else if(hex[1] >= 'a' && hex[1] <= 'f')
-		octet = (hex[1] - 'a' + 10);
+		octet |= (hex[1] - 'a' + 10);
 	else if(hex[1] >= 'A' && hex[1] <= 'F')
-		octet = (hex[1] - 'A' + 10);
+		octet |= (hex[1] - 'A' + 10);
 	else
 		octet = -1;
 	return octet;
@@ -464,7 +470,7 @@ int ETMpublish(ETMObject_t *Obj, int tpcidx, uint8_t qos, uint8_t *data, uint16_
   char hexbyte[3];
   uint32_t ret;
 #ifdef TIMEOUT_RESPONSES
-  checkTimeout(Obj);
+  ETMcheckTimeout(Obj);
 #endif  
   /* TODO - check we're not already sending something */
   
@@ -495,10 +501,9 @@ int ETMpublish(ETMObject_t *Obj, int tpcidx, uint8_t qos, uint8_t *data, uint16_
 
 /* Polling loop - the work is done here */
 void ETMpoll(ETMObject_t *Obj){
-  int32_t ret;
-  persistScanVals = RET_SENDOK | RET_SENDFAIL | RET_IDLE | RET_CRLF | RET_MQTTREC | RET_EMQRDY | RET_SUBOPEN | RET_SUBCLOSE | RET_PUBOPEN | RET_PUBCLOSE | RET_EURDY | RET_STATEURC | RET_APPRDY;
+  persistScanVals = RET_SENDOK | RET_SENDFAIL | RET_IDLE | RET_CRLF | RET_MQTTREC | RET_EMQRDY | RET_SUBOPEN | RET_SUBCLOSE | RET_PUBOPEN | RET_PUBCLOSE | RET_EURDY | RET_STATEURC | RET_APPRDY | RET_FWAVAILABLE;
 #ifdef TIMEOUT_RESPONSES
-  checkTimeout(Obj);
+  ETMcheckTimeout(Obj);
 #endif 
   
   AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_ANY, ETM_TOUT_300);
@@ -578,7 +583,7 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
               else
                   Obj->pubtopics[idx].pubstate = PUB_TOPIC_ERROR;
     	  }else{
-    		  UARTDEBUGPRINTF("Error decoding pubopen urc\r\n");
+    		  UARTDEBUGPRINTF("Error decoding pubopen urc (ret %d)\r\n", ret);
     	  }
           break;
       case RET_PUBCLOSE:
@@ -667,6 +672,21 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
           AT_ExecuteCommand(Obj, ETM_TOUT_300, (uint8_t *)"ATE0\r\n", RET_OK | RET_ERROR);
           UARTDEBUGPRINTF("BG96 found\r\n");
           break;
+      case RET_FWAVAILABLE:
+    	  ret = AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_CRLF, ETM_TOUT_500);
+    	  if(ret == RET_CRLF){
+    		  bool firmware_available = false;
+    		  if(strncmp((char *)Obj->CmdResp, "available", 9) == 0){
+    			  UARTDEBUGPRINTF("Host firmware available\r\n");
+    			  firmware_available = true;
+    		  }else{
+    			  UARTDEBUGPRINTF("Host firmware not available\r\n");
+    		  }
+    		  if(Obj->fwupdcb != NULL)
+    			  Obj->fwupdcb(firmware_available);
+    		  Obj->fwupdcb = NULL;
+    	  }
+    	  break;
       case RET_CRLF:
     	  /* Ignore newlines */
     	  break;
@@ -722,7 +742,7 @@ int ETMstartproto(ETMObject_t *Obj, tetmProto proto){
 }
 
 #ifdef TIMEOUT_RESPONSES
-bool ETMcheckTimeout(ETMObject_t *Obj){
+static bool ETMcheckTimeout(ETMObject_t *Obj){
     /* Check pending pub/sub requests etc. */
     int topiccount = 0;
     bool waiting = false;
@@ -730,7 +750,7 @@ bool ETMcheckTimeout(ETMObject_t *Obj){
     while(topiccount < MAX_PUB_TOPICS){
         diff = now - Obj->pubtopics[topiccount].senttime;
         if(Obj->pubtopics[topiccount].pubstate == PUB_TOPIC_REGISTERING || Obj->pubtopics[topiccount].pubstate == PUB_TOPIC_UNREGISTERING){
-            if(diff >= PUB_TICKS_TIMEOUT){
+            if(diff >= pdMS_TO_TICKS(PUB_TIMEOUT)){
                 Obj->pubtopics[topiccount].pubstate = PUB_TOPIC_ERROR;
                 UARTDEBUGPRINTF("Pub idx %d timed out\n", topiccount);
             }else{
@@ -742,4 +762,79 @@ bool ETMcheckTimeout(ETMObject_t *Obj){
     return waiting;
 }
 #endif
+
+int ETMGetHostFW(ETMObject_t *Obj, char *url, _fwupdcb cb){
+	int rc = -1;
+	uint32_t ret = RET_OK;
+	if(url != NULL){
+	    sprintf(CmdString, "AT+ETMCFG=host,updateurl,%s\r\n", url);
+	    ret = AT_ExecuteCommand(Obj, ETM_TOUT_300, (uint8_t *)CmdString, RET_OK | RET_ERROR);
+	}
+	if(ret == RET_OK){
+	    sprintf(CmdString, "AT+ETMHFWGET\r\n");
+	    ret = AT_ExecuteCommand(Obj, ETM_TOUT_300, (uint8_t *)CmdString, RET_OK | RET_ERROR);
+	    Obj->fwupdcb = cb;
+	    rc = 0;
+	}
+	return rc;
+}
+
+int ETMGetHostFWDetails(ETMObject_t *Obj, uint32_t *len, uint16_t *cs){
+	uint32_t ret = RET_NONE;
+	int rc = -1;
+	persistScanVals &= ~RET_CRLF;
+    sprintf(CmdString, "AT+ETMHFWREAD?\r\n");
+    ret = AT_ExecuteCommand(Obj, ETM_TOUT_300, (uint8_t *)CmdString, RET_OK | RET_ERROR);
+    persistScanVals |= RET_CRLF;
+    if(ret == RET_OK){
+    	char *parsestr = (char *)Obj->CmdResp;
+
+    	configPRINTF(("Response is %s\r\n", parsestr));
+
+    	while(*parsestr != ':' && *parsestr != 0)
+    		parsestr++;
+    	if(*parsestr == ':'){
+    		parsestr++;
+    		*len = strtol(parsestr, &parsestr, 10);
+    		if(*parsestr == ','){
+    			parsestr++;
+    			*cs = strtol(parsestr, &parsestr, 16);
+    			rc = 0;
+    		}
+    	}
+    }
+    return rc;
+}
+
+int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *respbuf){
+	int rc = -1, octets = 0;
+	uint32_t ret = RET_OK;
+	persistScanVals &= ~RET_CRLF;
+	sprintf(CmdString, "AT+ETMHFWREAD=%d,%d\r\n", offset, len);
+	ret = AT_ExecuteCommand(Obj, ETM_TOUT_500, (uint8_t *)CmdString, RET_OK | RET_ERROR);
+	persistScanVals |= RET_CRLF;
+	if(ret == RET_OK){
+		char *parsestr = (char *)Obj->CmdResp;
+		while(*parsestr != ':' && *parsestr != 0)
+			parsestr++;
+		if(*parsestr == ':'){
+			parsestr++;
+			/* Now decode ascii hex into binary */
+            while(1){
+            	if(isxdigit(parsestr[0]) && isxdigit(parsestr[1])){
+            		*respbuf++ = hextooctet(parsestr);
+            		parsestr += 2;
+            		octets++;
+            	}else{
+            		break;
+            	}
+
+            }
+		}
+		//UARTDEBUGPRINTF("Got %d octets\r\n", octets);
+		if(octets == len)
+	        rc = 0;
+	}
+	return rc;
+}
   

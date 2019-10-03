@@ -16,8 +16,10 @@
 #include "stdint.h"
 #include "string.h"
 #include "stdio.h"
+#include "stdbool.h"
 #include "etm_conf.h"
 
+#define TIMEOUT_RESPONSES
 
 /* Private Constants --------------------------------------------------------*/
 #define  RET_NONE           0x0000  /* RET_NONE shall be 0x0: don't change this value! */
@@ -36,11 +38,13 @@
 #define  RET_PUBCLOSE       0x1000
 #define  RET_APPRDY         0x2000
 #define  RET_STATEURC       0x4000
+#define  RET_FWAVAILABLE    0x8000
 #define  RET_ANY            0x80000000  /* Scan for persistent responses (normally URCs) only */
-#define  NUM_RESPONSES      15
+#define  NUM_RESPONSES      16
 
 #define ETM_TOUT_SHORT                         50  /* 50 ms */
 #define ETM_TOUT_300                          350  /* 0,3 sec + margin */
+#define ETM_TOUT_500                          550
 #define ETM_TOUT_ATSYNC                       500   
 #define ETM_TOUT_5000                        5500  /* 5 sec + margin */
 #define ETM_TOUT_15000                      16500  /* 15 sec + margin */
@@ -101,6 +105,8 @@ typedef struct {
 typedef void (*_atcb)(char *data);
 /* Prototype for the message callback function */	
 typedef void (*_msgcb)(uint8_t *data, uint32_t length);
+/* Prototype for the host-firmware-available callback function */
+typedef void (*_fwupdcb)(bool available);
 /* Publish topic state */
 typedef enum {PUB_TOPIC_ERROR = -1, PUB_TOPIC_NOT_IN_USE = 0, PUB_TOPIC_REGISTERING, PUB_TOPIC_REGISTERED, PUB_TOPIC_UNREGISTERING} tpubTopicState;
 /* Subscribe topic state */
@@ -122,6 +128,8 @@ struct subtpc{
   _msgcb messagecb;
   tsubTopicState substate;
 };
+
+#define PUB_TIMEOUT 2000
 
 /* Publish topic array element */
 struct pubtpc{
@@ -148,6 +156,7 @@ typedef struct {
   unsigned int urcseen;
   _atcb atcallback;
   _statecb statecallback;
+  _fwupdcb fwupdcb;
   unsigned char binaryread;
   unsigned char buffered;
   uint8_t readingsub;
@@ -173,12 +182,21 @@ void ETMpoll(ETMObject_t *Obj);
 int ETMstartproto(ETMObject_t *Obj, tetmProto proto);
 
 int ETMsubscribe(ETMObject_t *Obj, char *topic, _msgcb callback);
+int ETMunsubscribe(ETMObject_t *Obj, int idx);
 
 int ETMpubreg(ETMObject_t *Obj, char *topic);
+int ETMpubunreg(ETMObject_t *Obj, int idx);
 int ETMpublish(ETMObject_t *Obj, int tpcidx, uint8_t qos, uint8_t *data, uint16_t datalen);
 
 /* Application must provide callback function that gives a Timer Tick in ms (e.g. HAL_GetTick())*/
 ETM_Return_t  ETM_RegisterTickCb(ETMObject_t *Obj, App_GetTickCb_Func  GetTickCb);
+
+/* Request to go away and download host firmware */
+int ETMGetHostFW(ETMObject_t *Obj, char *url, _fwupdcb cb);
+/* Get details of the size and checksum of the host firmware image */
+int ETMGetHostFWDetails(ETMObject_t *Obj, uint32_t *len, uint16_t *cs);
+/* Read a section of the host fw */
+int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *respbuf);
 
 #ifdef __cplusplus
 }

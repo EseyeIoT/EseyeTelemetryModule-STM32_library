@@ -34,6 +34,9 @@
 #ifdef ETM_BASIC_DEMO
 extern void vStartETMBasicDemo( void );
 #endif
+#ifdef ETM_OTA_DEMO
+extern void vStartETMOtaDemo( void );
+#endif
 
 /*-----------------------------------------------------------*/
 
@@ -43,5 +46,8 @@ extern void vStartETMBasicDemo( void );
 void ETM_RunDemo( void ){
 #ifdef ETM_BASIC_DEMO
     vStartETMBasicDemo();
+#endif
+#ifdef ETM_OTA_DEMO
+    vStartETMOtaDemo();
 #endif
 }

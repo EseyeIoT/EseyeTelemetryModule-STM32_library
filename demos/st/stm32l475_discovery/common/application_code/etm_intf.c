@@ -61,6 +61,7 @@ void ETM_HwStatusInit(void){
 
 	if(HAL_GPIO_ReadPin(C2C_STATUS_GPIO_PORT, C2C_STATUS_PIN) == 1){
 		ETM_HwPowerDown();
+		vTaskDelay(pdMS_TO_TICKS(500));
 	}
 }
 

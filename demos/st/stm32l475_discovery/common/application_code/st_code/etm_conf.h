@@ -24,5 +24,5 @@
 #ifdef __cplusplus
 }
 #endif
-#endif /* __UG96_CONF_H */
+#endif /* __ETM_CONF_H */
 
