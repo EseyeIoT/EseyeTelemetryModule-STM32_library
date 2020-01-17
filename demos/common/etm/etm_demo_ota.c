@@ -62,6 +62,7 @@
 
 /* Library includes */
 #include "etm/etm.h"
+#include "etm_intf.h"
 
 /* Reference to the ETM context created in etm_intf.c */
 extern ETMObject_t ETMC2cObj;
@@ -141,11 +142,18 @@ static void swapBootBank(void) {
 	}
 }
 
+void stateupd(void){
+	configPRINTF(("New state is %d\r\n", ETMC2cObj.currentstate));
+}
+
 #define MAXCHUNKSIZE 50 /* Make sure this is an even number */
 
 static void ETMOtaTask( void * pvParameters ){
 	/* Holder for the current tick count during timing loop */
     uint32_t tickstart;
+
+    /* Power up the ETM */
+    ETM_HwPowerUp();
 
     reportBootBank();
 
@@ -165,6 +173,9 @@ static void ETMOtaTask( void * pvParameters ){
 	if(!(ETMC2cObj.urcseen & ETM_MQTTREADY_URC)){
 		configPRINTF(("Error MQTT not ready\r\n"));
 	}
+
+	ETMstatecb(&ETMC2cObj, stateupd);
+	ETMupdateState(&ETMC2cObj, ETM_STATE_ON);
 
 	/* Subscribe to update/<thingname> topic */
 	updatesubidx = ETMsubscribe(&ETMC2cObj, (char *)"update", updatecb);

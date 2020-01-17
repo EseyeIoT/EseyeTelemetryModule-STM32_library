@@ -37,6 +37,9 @@ extern void vStartETMBasicDemo( void );
 #ifdef ETM_OTA_DEMO
 extern void vStartETMOtaDemo( void );
 #endif
+#ifdef ETM_AWS_OTA_DEMO
+extern void vStartETMAWSOtaDemo( void );
+#endif
 
 /*-----------------------------------------------------------*/
 
@@ -49,5 +52,8 @@ void ETM_RunDemo( void ){
 #endif
 #ifdef ETM_OTA_DEMO
     vStartETMOtaDemo();
+#endif
+#ifdef ETM_AWS_OTA_DEMO
+    vStartETMAWSOtaDemo();
 #endif
 }

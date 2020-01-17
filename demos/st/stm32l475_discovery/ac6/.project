@@ -151,9 +151,19 @@
 			<locationURI>AWS_IOT_MCU_ROOT/demos/common/logging/aws_logging_task_dynamic_buffers.c</locationURI>
 		</link>
 		<link>
+			<name>application_code/common_demos/source/etm_demo_awsota.c</name>
+			<type>1</type>
+			<locationURI>PARENT-3-PROJECT_LOC/common/etm/etm_demo_awsota.c</locationURI>
+		</link>
+		<link>
 			<name>application_code/common_demos/source/etm_demo_basic.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/common/etm/etm_demo_basic.c</locationURI>
+		</link>
+		<link>
+			<name>application_code/common_demos/source/etm_demo_ota.c</name>
+			<type>1</type>
+			<locationURI>PARENT-3-PROJECT_LOC/common/etm/etm_demo_ota.c</locationURI>
 		</link>
 		<link>
 			<name>application_code/common_demos/source/etm_demo_runner.c</name>

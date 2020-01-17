@@ -59,15 +59,23 @@ void ETM_HwStatusInit(void){
 	HAL_GPIO_WritePin(C2C_PWRKEY_GPIO_PORT, C2C_PWRKEY_PIN,GPIO_PIN_RESET);
 	//vTaskDelay(pdMS_TO_TICKS(1000));
 
-	if(HAL_GPIO_ReadPin(C2C_STATUS_GPIO_PORT, C2C_STATUS_PIN) == 1){
-		ETM_HwPowerDown();
-		vTaskDelay(pdMS_TO_TICKS(500));
-	}
+	ETM_HwCheckPowerDown();
+//	if(HAL_GPIO_ReadPin(C2C_STATUS_GPIO_PORT, C2C_STATUS_PIN) == 1){
+//		ETM_HwPowerDown();
+//		vTaskDelay(pdMS_TO_TICKS(500));
+//	}
 }
 
 /* Read the status pin (high indicates ETM is powered on) */
 int ETM_HwStatus(void){
 	return HAL_GPIO_ReadPin(C2C_STATUS_GPIO_PORT, C2C_STATUS_PIN);
+}
+
+void ETM_HwCheckPowerDown(void){
+	if(HAL_GPIO_ReadPin(C2C_STATUS_GPIO_PORT, C2C_STATUS_PIN) == 1){
+		ETM_HwPowerDown();
+		vTaskDelay(pdMS_TO_TICKS(500));
+	}
 }
 
 /* Power the ETM down (this assumes it is powered up currently) */
@@ -83,7 +91,7 @@ void ETM_HwPowerDown(void){
 }
 
 /* Power the ETM up (this assumes it is currently powered down) */
-static void ETM_HwPowerUp(void){
+void ETM_HwPowerUp(void){
 	HAL_GPIO_WritePin(C2C_PWRKEY_GPIO_PORT, C2C_PWRKEY_PIN,GPIO_PIN_SET);
 	/* Hold pwrkey for 100 mS */
 	vTaskDelay(pdMS_TO_TICKS(100));
@@ -126,6 +134,8 @@ int8_t UART_C2C_Init(void)
 	huart4.Init.OverSampling = UART_OVERSAMPLING_16;
 	huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
 	huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+
+	HAL_UART_DeInit(&huart4);
 
   UART_C2C_MspInit(&huart4);
   /* Configure the USART IP */
@@ -337,7 +347,7 @@ void ETM_Run(void){
 	else
 		configPRINTF(("\r\nStartup ERROR!\r\n"));
 
-    ETM_HwPowerUp();
+    //ETM_HwPowerUp();
 }
 
 #endif

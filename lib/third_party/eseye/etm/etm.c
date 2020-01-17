@@ -538,6 +538,9 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
       case RET_STATEURC:
     	  ret = AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_CRLF, ETM_TOUT_300);
     	  if(ret == RET_CRLF){
+              char *resp = (char *)Obj->CmdResp;
+            if(*resp == ':')
+                resp++;
               Obj->currentstate = (tetmState)strtol((char *)Obj->CmdResp, NULL, 10);
               if(Obj->statecallback != NULL)
                   Obj->statecallback();

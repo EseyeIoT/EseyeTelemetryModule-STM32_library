@@ -16,7 +16,9 @@
 
 int ETM_HwStatus(void);
 void ETM_HwStatusInit(void);
+void ETM_HwCheckPowerDown(void);
 void ETM_HwPowerDown(void);
+void ETM_HwPowerUp(void);
 void ETM_Run(void);
 
 #endif

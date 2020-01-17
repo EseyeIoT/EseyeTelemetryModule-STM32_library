@@ -58,6 +58,8 @@
 /* Application includes */
 #include "etm_demo_basic.h"
 
+#include "etm_intf.h"
+
 /* Library includes */
 #include "etm/etm.h"
 
@@ -83,42 +85,70 @@ static void publish(void){
     ETMpublish(&ETMC2cObj, statuspubidx, 1, (uint8_t *)msg, strlen(msg));
 };
 
+void stateupd(void){
+	configPRINTF(("New state is %d\r\n", ETMC2cObj.currentstate));
+}
+
 static void ETMBasicTask( void * pvParameters ){
 	/* Holder for the current tick count during timing loop */
     uint32_t tickstart;
+    bool toggle_power = true;
 
-    /* Initialise the ETM context */
-	ETM_Init(&ETMC2cObj, NULL);
-
-	/* Tell ETM to start MQTT */
-	ETMstartproto(&ETMC2cObj, ETM_MQTT);
-
-	/* Wait up to 5 seconds for the MQTT subsystem to be ready
-	 * This DOES NOT depend on connectivity it just indicates that ETM is ready to start receiving sub/pub
-	 * commands and publish messages will be stored to non-volatile memory to be forwarded when connected */
-	tickstart = ETMC2cObj.GetTickCb();
-	while((ETMC2cObj.GetTickCb() - tickstart) < pdMS_TO_TICKS(5000) && !(ETMC2cObj.urcseen & ETM_MQTTREADY_URC)){
-	    ETMpoll(&ETMC2cObj);
-	}
-	if(!(ETMC2cObj.urcseen & ETM_MQTTREADY_URC)){
-		configPRINTF(("Error MQTT not ready\r\n"));
-	}
-
-	/* Subscribe to update/<thingname> topic */
-	updatesubidx = ETMsubscribe(&ETMC2cObj, (char *)"update", updatecb);
-
-	/* Register publish topic as status/<thingname> */
-	statuspubidx = ETMpubreg(&ETMC2cObj, (char *)"status");
-
-	/* Main loop which handles the update timer and publishing status */
     while(1){
-    	tickstart = ETMC2cObj.GetTickCb();
-    	while((ETMC2cObj.GetTickCb() - tickstart) < pdMS_TO_TICKS(updatetime)){
-    	    ETMpoll(&ETMC2cObj);
+
+    	if(toggle_power == true){
+            /* Power up the ETM */
+            ETM_HwPowerUp();
+            toggle_power = false;
     	}
-    	configPRINTF(("Publish\r\n"));
-        publish();
+
+        /* Initialise the ETM context */
+	    ETM_Init(&ETMC2cObj, NULL);
+
+	    /* Tell ETM to start MQTT */
+	    ETMstartproto(&ETMC2cObj, ETM_MQTT);
+
+	    /* Wait up to 5 seconds for the MQTT subsystem to be ready
+	     * This DOES NOT depend on connectivity it just indicates that ETM is ready to start receiving sub/pub
+	     * commands and publish messages will be stored to non-volatile memory to be forwarded when connected */
+	    tickstart = ETMC2cObj.GetTickCb();
+	    while((ETMC2cObj.GetTickCb() - tickstart) < pdMS_TO_TICKS(5000) && !(ETMC2cObj.urcseen & ETM_MQTTREADY_URC)){
+	        ETMpoll(&ETMC2cObj);
+	    }
+	    if(!(ETMC2cObj.urcseen & ETM_MQTTREADY_URC)){
+		    configPRINTF(("Error MQTT not ready\r\n"));
+	    }
+
+	    ETMstatecb(&ETMC2cObj, stateupd);
+	    ETMupdateState(&ETMC2cObj, ETM_STATE_ON);
+
+	    /* Subscribe to update/<thingname> topic */
+	    updatesubidx = ETMsubscribe(&ETMC2cObj, (char *)"update", updatecb);
+
+	    /* Register publish topic as status/<thingname> */
+	    statuspubidx = ETMpubreg(&ETMC2cObj, (char *)"status");
+
+	    /* Main loop which handles the update timer and publishing status */
+        while((ETMC2cObj.urcseen & ETM_REBOOT_REQUIRED) == 0 && (ETMC2cObj.urcseen & ETM_REBOOT) == 0){
+    	    tickstart = ETMC2cObj.GetTickCb();
+    	    while((ETMC2cObj.GetTickCb() - tickstart) < pdMS_TO_TICKS(updatetime)){
+    	        ETMpoll(&ETMC2cObj);
+    	    }
+    	    configPRINTF(("Publish\r\n"));
+            publish();
+        }
+        if(ETMC2cObj.urcseen & ETM_REBOOT_REQUIRED){
+        	toggle_power = true;
+        }else{
+        	configPRINTF(("ETM is rebooting...\r\n"));
+        }
+        if(toggle_power == true){
+            configPRINTF(("Restarting ETM...\r\n"));
+            /* Reboot required */
+            ETM_HwCheckPowerDown();
+        }
     }
+
 }
 
 void vStartETMBasicDemo( void ){
