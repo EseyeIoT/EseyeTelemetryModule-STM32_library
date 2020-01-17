@@ -19,7 +19,7 @@
 #include "stdbool.h"
 #include "etm_conf.h"
 
-#define TIMEOUT_RESPONSES
+//#define TIMEOUT_RESPONSES
 
 /* Private Constants --------------------------------------------------------*/
 #define  RET_NONE           0x0000  /* RET_NONE shall be 0x0: don't change this value! */
@@ -39,8 +39,10 @@
 #define  RET_APPRDY         0x2000
 #define  RET_STATEURC       0x4000
 #define  RET_FWAVAILABLE    0x8000
+#define  RET_REBOOT_REQ     0x10000
+#define  RET_REBOOTING      0x10001
 #define  RET_ANY            0x80000000  /* Scan for persistent responses (normally URCs) only */
-#define  NUM_RESPONSES      16
+#define  NUM_RESPONSES      18
 
 #define ETM_TOUT_SHORT                         50  /* 50 ms */
 #define ETM_TOUT_300                          350  /* 0,3 sec + margin */
@@ -122,6 +124,8 @@ typedef enum {ETM_MQTT, ETM_UDP} tetmProto;
 #define ETM_READY_URC        (0x01 << 0)
 #define ETM_MQTTREADY_URC    (0x01 << 1)
 #define ETM_UDPREADY_URC     (0x01 << 2)
+#define ETM_REBOOT_REQUIRED  (0x01 << 3)
+#define ETM_REBOOT           (0x01 << 4)
 
 /* Subscribed topic array element */	
 struct subtpc{
@@ -181,6 +185,9 @@ void ETMpoll(ETMObject_t *Obj);
 
 int ETMstartproto(ETMObject_t *Obj, tetmProto proto);
 
+void ETMupdateState(ETMObject_t *Obj, tetmRequestState streq);
+void ETMstatecb(ETMObject_t *Obj, _statecb stateupdatecb);
+
 int ETMsubscribe(ETMObject_t *Obj, char *topic, _msgcb callback);
 int ETMunsubscribe(ETMObject_t *Obj, int idx);
 
@@ -197,7 +204,8 @@ int ETMGetHostFW(ETMObject_t *Obj, char *url, _fwupdcb cb);
 int ETMGetHostFWDetails(ETMObject_t *Obj, uint32_t *len, uint16_t *cs);
 /* Read a section of the host fw */
 int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *respbuf);
-
+/* Acknowledge the firmware has been downloaded and accepted */
+int ETMAckHostFW(ETMObject_t *Obj);
 #ifdef __cplusplus
 }
 #endif

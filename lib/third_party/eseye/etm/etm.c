@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -52,7 +53,9 @@ const ETM_RetKeywords_t ReturnKeywords[] = {
     { RET_EURDY,        "+ETM:EURDY\r\n"},
     { RET_STATEURC,     "+ETMSTATE:"},
     { RET_APPRDY,       "APP RDY"},
-    { RET_FWAVAILABLE,  "+ETMHFWGET:"},
+	{ RET_FWAVAILABLE,  "+ETMHFWGET:"},
+	{ RET_REBOOT_REQ,   "+ETM:REBOOT REQUIRED"},
+	{ RET_REBOOTING,    "+ETM:REBOOTING"},
     { RET_OK,           "OK\r\n" },
     { RET_ERROR,        "ERROR\r\n" },
     { RET_CRLF,         "\r\n" },
@@ -501,12 +504,16 @@ int ETMpublish(ETMObject_t *Obj, int tpcidx, uint8_t qos, uint8_t *data, uint16_
 
 /* Polling loop - the work is done here */
 void ETMpoll(ETMObject_t *Obj){
-  persistScanVals = RET_SENDOK | RET_SENDFAIL | RET_IDLE | RET_CRLF | RET_MQTTREC | RET_EMQRDY | RET_SUBOPEN | RET_SUBCLOSE | RET_PUBOPEN | RET_PUBCLOSE | RET_EURDY | RET_STATEURC | RET_APPRDY | RET_FWAVAILABLE;
+  persistScanVals = RET_SENDOK | RET_SENDFAIL | RET_IDLE | RET_CRLF | RET_MQTTREC | RET_EMQRDY | RET_SUBOPEN | RET_SUBCLOSE | RET_PUBOPEN | RET_PUBCLOSE | RET_EURDY | RET_STATEURC | RET_APPRDY | RET_FWAVAILABLE | RET_REBOOT_REQ;
 #ifdef TIMEOUT_RESPONSES
   ETMcheckTimeout(Obj);
 #endif 
   
   AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_ANY, ETM_TOUT_300);
+  //int32_t ret = AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_ANY, ETM_TOUT_300);
+  //if(ret == ETM_RETURN_NO_DATA && strlen(Obj->CmdResp) > 0){
+  //UARTDEBUGPRINTF("Ignoring %s\r\n", Obj->CmdResp);
+  //}
   
 }
 
@@ -534,14 +541,19 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
           /* UDP mode is ready */
           Obj->urcseen |= ETM_UDPREADY_URC;
           break;
-          
+      case RET_REBOOT_REQ:
+    	  Obj->urcseen |= ETM_REBOOT_REQUIRED;
+    	  break;
+      case RET_REBOOTING:
+    	  Obj->urcseen |= ETM_REBOOT;
+    	  break;
       case RET_STATEURC:
     	  ret = AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_CRLF, ETM_TOUT_300);
     	  if(ret == RET_CRLF){
-              char *resp = (char *)Obj->CmdResp;
-            if(*resp == ':')
-                resp++;
-              Obj->currentstate = (tetmState)strtol((char *)Obj->CmdResp, NULL, 10);
+    		  char *resp = (char *)Obj->CmdResp;
+    		  if(*resp == ':')
+    			  resp++;
+              Obj->currentstate = (tetmState)strtol(resp, NULL, 10);
               if(Obj->statecallback != NULL)
                   Obj->statecallback();
     	  }
@@ -703,7 +715,7 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
 /* Send an AT command */
 void ETMsendAT(ETMObject_t *Obj, char *atcmd){
 #ifdef TIMEOUT_RESPONSES
-    checkTimeout(Obj);
+    ETMcheckTimeout(Obj);
 #endif
     Obj->fops.IO_Send((uint8_t *)atcmd, strlen(atcmd));
 }
@@ -813,7 +825,7 @@ int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *resp
 	int rc = -1, octets = 0;
 	uint32_t ret = RET_OK;
 	persistScanVals &= ~RET_CRLF;
-	sprintf(CmdString, "AT+ETMHFWREAD=%d,%d\r\n", offset, len);
+	sprintf(CmdString, "AT+ETMHFWREAD=%lu,%d\r\n", offset, len);
 	ret = AT_ExecuteCommand(Obj, ETM_TOUT_500, (uint8_t *)CmdString, RET_OK | RET_ERROR);
 	persistScanVals |= RET_CRLF;
 	if(ret == RET_OK){
@@ -841,3 +853,17 @@ int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *resp
 	return rc;
 }
   
+int ETMAckHostFW(ETMObject_t *Obj){
+	int rc = -1;
+	uint32_t ret = RET_OK;
+	persistScanVals &= ~RET_CRLF;
+	sprintf(CmdString, "AT+ETMHFWCONF\r\n");
+	ret = AT_ExecuteCommand(Obj, ETM_TOUT_5000, (uint8_t *)CmdString, RET_OK | RET_ERROR);
+	persistScanVals |= RET_CRLF;
+	if(ret == RET_OK){
+        UARTDEBUGPRINTF("Host firmware acknowledged\r\n");
+	    rc = 0;
+	}
+	return rc;
+}
+
