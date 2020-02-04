@@ -45,6 +45,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "stdbool.h"
+#include "ctype.h"
 
 #include "stm32l4xx_hal.h"
 
@@ -344,9 +345,47 @@ static void ETMAWSOtaTask( void * pvParameters ){
     	            	configPRINTF(("No new software available\r\n"));
     	            }
     	            divcount = 0;
+    	        }else if(divcount == 3){
+    	        	char *resp;
+    	        	//configPRINTF(("Get signal strength\r\n"));
+    	        	resp = (char *)ETMSendATCommand(&ETMC2cObj, (uint8_t *)"AT+CSQ\r\n", RET_OK | RET_ERROR | RET_CME_ERROR, ETM_TOUT_300);
+    	        	if(resp != NULL){
+    	        		//configPRINTF(("sig strength response: %s\n", resp));
+    	        		char *rssiptr = strstr(resp, "+CSQ:");
+    	        		int rssi;
+    	        		if(rssiptr != NULL){
+    	        			rssiptr += 5;
+    	        			while(*rssiptr != 0 && isspace(*rssiptr))
+    	        				rssiptr++;
+    	        			rssi = strtol(rssiptr, NULL, 10);
+    	        			char rssistr[5] = {0};
+    	        			char qualstr[10];
+    	        			if(rssi < 31){
+    	        				rssi = 113 - (rssi * 2);
+    	        				sprintf(rssistr, "-%d", rssi);
+    	        				if(rssi < 75)
+    	        					sprintf(qualstr, "Excellent");
+    	        				else if(rssi < 85)
+    	        					sprintf(qualstr, "Good");
+    	        				else if(rssi < 95)
+    	        					sprintf(qualstr, "OK");
+    	        				else
+    	        					sprintf(qualstr, "Marginal");
+    	        			}else if(rssi == 31){
+    	        				sprintf(rssistr, ">-52");
+    	        				sprintf(qualstr, "Excellent");
+    	        			}
+    	        			if(rssistr[0] != 0)
+    	        			    configPRINTF(("RSSI %s dBm - %s\r\n", rssistr, qualstr));
+    	        			else
+    	        				configPRINTF(("RSSI unknown\r\n"));
+    	        		}
+    	        	}else{
+    	        		configPRINTF(("Failed to get signal strength\r\n"));
+    	        	}
     	        }
 
-    	        configPRINTF(("Publish\r\n"));
+    	        //configPRINTF(("Publish\r\n"));
     	        publish();
 
     	    }

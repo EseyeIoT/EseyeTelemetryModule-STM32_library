@@ -41,8 +41,9 @@
 #define  RET_FWAVAILABLE    0x8000
 #define  RET_REBOOT_REQ     0x10000
 #define  RET_REBOOTING      0x10001
+#define  RET_CME_ERROR      0x10002
 #define  RET_ANY            0x80000000  /* Scan for persistent responses (normally URCs) only */
-#define  NUM_RESPONSES      18
+#define  NUM_RESPONSES      19
 
 #define ETM_TOUT_SHORT                         50  /* 50 ms */
 #define ETM_TOUT_300                          350  /* 0,3 sec + margin */
@@ -155,6 +156,7 @@ typedef struct {
   ETM_IO_t           fops;
   App_GetTickCb_Func  GetTickCb;
   uint8_t             CmdResp[ETM_CMD_SIZE];
+  _msgcb fixedsubcb;
   struct subtpc subtopics[MAX_SUB_TOPICS];
   struct pubtpc pubtopics[MAX_PUB_TOPICS];
   unsigned int urcseen;
@@ -171,8 +173,6 @@ typedef struct {
 
 /* ==== Init and status ==== */
 
-ETM_Return_t ETM_RegisterTickCb(ETMObject_t *Obj, App_GetTickCb_Func GetTickCb);
-
 ETM_Return_t  ETM_RegisterBusIO(ETMObject_t *Obj, IO_Init_Func IO_Init,
                                                      IO_DeInit_Func IO_DeInit,
                                                      IO_Baudrate_Func IO_Baudrate,
@@ -183,11 +183,14 @@ ETM_Return_t  ETM_RegisterBusIO(ETMObject_t *Obj, IO_Init_Func IO_Init,
 ETM_InitRet_t ETM_Init(ETMObject_t *Obj, _atcb urccallback);
 void ETMpoll(ETMObject_t *Obj);
 
+uint8_t *ETMSendATCommand(ETMObject_t *Obj, uint8_t *cmdstr, uint32_t retflags, uint32_t timeout);
+
 int ETMstartproto(ETMObject_t *Obj, tetmProto proto);
 
 void ETMupdateState(ETMObject_t *Obj, tetmRequestState streq);
 void ETMstatecb(ETMObject_t *Obj, _statecb stateupdatecb);
 
+void ETMfixedsubsetcallback(ETMObject_t *Obj, _msgcb callback);
 int ETMsubscribe(ETMObject_t *Obj, char *topic, _msgcb callback);
 int ETMunsubscribe(ETMObject_t *Obj, int idx);
 
@@ -196,7 +199,7 @@ int ETMpubunreg(ETMObject_t *Obj, int idx);
 int ETMpublish(ETMObject_t *Obj, int tpcidx, uint8_t qos, uint8_t *data, uint16_t datalen);
 
 /* Application must provide callback function that gives a Timer Tick in ms (e.g. HAL_GetTick())*/
-ETM_Return_t  ETM_RegisterTickCb(ETMObject_t *Obj, App_GetTickCb_Func  GetTickCb);
+ETM_Return_t ETM_RegisterTickCb(ETMObject_t *Obj, App_GetTickCb_Func  GetTickCb);
 
 /* Request to go away and download host firmware */
 int ETMGetHostFW(ETMObject_t *Obj, char *url, _fwupdcb cb);

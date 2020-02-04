@@ -53,10 +53,11 @@ const ETM_RetKeywords_t ReturnKeywords[] = {
     { RET_EURDY,        "+ETM:EURDY\r\n"},
     { RET_STATEURC,     "+ETMSTATE:"},
     { RET_APPRDY,       "APP RDY"},
-	{ RET_FWAVAILABLE,  "+ETMHFWGET:"},
-	{ RET_REBOOT_REQ,   "+ETM:REBOOT REQUIRED"},
-	{ RET_REBOOTING,    "+ETM:REBOOTING"},
+    { RET_FWAVAILABLE,  "+ETMHFWGET:"},
+    { RET_REBOOT_REQ,   "+ETM:REBOOT REQUIRED"},
+    { RET_REBOOTING,    "+ETM:REBOOTING"},
     { RET_OK,           "OK\r\n" },
+    { RET_CME_ERROR,    "+CME ERROR\r\n" },
     { RET_ERROR,        "ERROR\r\n" },
     { RET_CRLF,         "\r\n" },
 };
@@ -287,6 +288,7 @@ ETM_InitRet_t ETM_Init(ETMObject_t *Obj, _atcb urccallback){
       for(i = 0; i < MAX_PUB_TOPICS; i++){
         Obj->pubtopics[i].pubstate = PUB_TOPIC_NOT_IN_USE;
       }
+      Obj->fixedsubcb = NULL;
 
       Obj->atcallback = urccallback;
       Obj->binaryread = 0;
@@ -319,6 +321,11 @@ ETM_InitRet_t ETM_Init(ETMObject_t *Obj, _atcb urccallback){
 }
 
 /* Subscribe topic API */
+
+/* Pass a fixed subscription callback function pointer */
+void ETMfixedsubsetcallback(ETMObject_t *Obj, _msgcb callback){
+    Obj->fixedsubcb = callback;
+}
 
 /* Subscribe to a topic using the first available topic index */
 int ETMsubscribe(ETMObject_t *Obj, char *topic, _msgcb callback){
@@ -517,10 +524,12 @@ void ETMpoll(ETMObject_t *Obj){
   
 }
 
+/* Process a received buffer which contains a match to a persistent scan string */
+/* This is used to handle ETM URCs which can automate transfers or set state flags */
 static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
   int32_t ret;
   char *errptr;
-  uint8_t idx;
+  int8_t idx;
   int8_t err;
 
   //if(ret != RET_NONE && ret != ETM_RETURN_RETRIEVE_ERROR)
@@ -618,13 +627,23 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
           /* <idx>,<len>\r\n<message>\r\n
            * If message is quoted it's ascii-hex
            * len is number of binary octets so x2 for number of ascii characters within quotes */
-    	  char *nextptr;
-    	  int len;
+    	  char *nextptr = NULL;
+    	  int len = 0;
 
     	  ret = AT_RetrieveData(Obj, Obj->CmdResp, ETM_CMD_SIZE, RET_CRLF, ETM_TOUT_300);
     	  if(ret == RET_CRLF){
-    	      idx = strtol((char *)Obj->CmdResp, &nextptr, 10);
-    	      len = strtol(nextptr + 1, &nextptr, 10);
+    		  if(*(char *)Obj->CmdResp == 'S'){
+    			  /* This is from the preconfigured single-subscription-topic */
+    			  idx = -1;
+    			  nextptr = (char *)Obj->CmdResp;
+    			  while(*nextptr != ',' && *nextptr != 0)
+    			      nextptr++;
+    		  }else{
+    			  /* This must be from a dynamic subscription (subopen) */
+    	          idx = strtol((char *)Obj->CmdResp, &nextptr, 10);
+    		  }
+    		  if(nextptr != NULL && *nextptr != 0)
+    	          len = strtol(nextptr + 1, &nextptr, 10);
 
     	      //UARTDEBUGPRINTF("mqtt received >%s<\r\n", Obj->CmdResp);
 
@@ -632,7 +651,7 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
 
     	      ret = AT_RetrieveData(Obj, Obj->CmdResp, len, RET_NONE, ETM_TOUT_300);
     	      if(ret == len){
-    	          if(Obj->subtopics[idx].substate == SUB_TOPIC_SUBSCRIBED){
+    	          if(idx == -1 || Obj->subtopics[idx].substate == SUB_TOPIC_SUBSCRIBED){
     		          uint8_t *msg;
     		          uint32_t msglen = 0;
     		          nextptr = (char *)Obj->CmdResp;
@@ -661,8 +680,19 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
                               msg[len] = 0;
                               msglen = len;
     		              }
-    	                  if(msg != NULL && msglen > 0 && Obj->subtopics[idx].messagecb != NULL)
-    	    	              Obj->subtopics[idx].messagecb(msg, msglen);
+    	                  if(msg != NULL && msglen > 0){
+    	                      if(idx != -1){
+    	                          /* Normal dynamic (subopen) subscription */
+    	                	  if(Obj->subtopics[idx].messagecb != NULL){
+    	    	                      Obj->subtopics[idx].messagecb(msg, msglen);
+    	                	  }
+    	                      }else{
+    	                	  /* Single subscription topic publish received */
+    	                	  if(Obj->fixedsubcb != NULL){
+                                      Obj->fixedsubcb(msg, msglen);
+                                  }
+    	                      }
+    	                  }
     	              }
     	          }else{
     		          UARTDEBUGPRINTF("Received publish on non-subscribed topic %d\r\n", idx);
@@ -673,7 +703,7 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
     	  }
 
       }
-          break;
+      break;
           
       case RET_SENDOK:
           UARTDEBUGPRINTF("Send OK\r\n");
@@ -712,12 +742,28 @@ static void ETMProcessReceived(ETMObject_t *Obj, uint32_t match){
   }
 }
 
+#ifdef removed
 /* Send an AT command */
 void ETMsendAT(ETMObject_t *Obj, char *atcmd){
 #ifdef TIMEOUT_RESPONSES
     ETMcheckTimeout(Obj);
 #endif
     Obj->fops.IO_Send((uint8_t *)atcmd, strlen(atcmd));
+}
+#endif
+
+/* Send a command to the AT port and await a response or timeout */
+uint8_t *ETMSendATCommand(ETMObject_t *Obj, uint8_t *cmdstr, uint32_t retflags, uint32_t timeout){
+	uint32_t ret = RET_NONE;
+	/* Ensure we are looking for OK/ERROR in addition to user options */
+	retflags |= (RET_OK | RET_ERROR);
+	/* Prevent CR detection for URCs as we may be expecting a multi-line response */
+	persistScanVals &= ~RET_CRLF;
+	ret = AT_ExecuteCommand(Obj, timeout, cmdstr, retflags);
+	persistScanVals |= RET_CRLF;
+	if(ret == RET_OK)
+		return Obj->CmdResp;
+	return NULL;
 }
 
 void ETMupdateState(ETMObject_t *Obj, tetmRequestState streq){
@@ -846,7 +892,6 @@ int ETMReadHostFW(ETMObject_t *Obj, uint32_t offset, uint16_t len, uint8_t *resp
 
             }
 		}
-		//UARTDEBUGPRINTF("Got %d octets\r\n", octets);
 		if(octets == len)
 	        rc = 0;
 	}
